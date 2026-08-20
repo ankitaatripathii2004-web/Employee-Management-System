@@ -25,17 +25,22 @@ mongoose.Promise = global.Promise;
 mongoose.set('strictQuery', false);
 var mongoDB = process.env.MONGODB_URI || "mongodb://localhost:27017/HRMS";
 
+if (!process.env.MONGODB_URI) {
+    console.warn("⚠️ Warning: MONGODB_URI environment variable is not set! Falling back to localhost.");
+}
+
 if (mongoose.connection.readyState === 0) {
     mongoose.connect(mongoDB, {
         useNewUrlParser: true,
         useUnifiedTopology: true,
+        serverSelectionTimeoutMS: 8000,
     });
 }
 
 var db = mongoose.connection;
 
-db.on("error", () => {
-    console.log("MongoDB connection failed...");
+db.on("error", (err) => {
+    console.error("MongoDB connection failed:", err.message || err);
 });
 db.once("open", () => {
     console.log("MongoDB connection successful...");
@@ -59,7 +64,10 @@ app.use(session({
   resave: false, 
   saveUninitialized: false, 
   store: MongoStore.create({
-    mongoUrl: process.env.MONGODB_URI || "mongodb://localhost:27017/HRMS"
+    mongoUrl: mongoDB,
+    mongoOptions: {
+      serverSelectionTimeoutMS: 8000
+    }
   }),
   cookie:{maxAge: parseInt(process.env.COOKIE_MAX_AGE) || 180*60*1000},
 }));
