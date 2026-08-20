@@ -22,7 +22,7 @@ var manager = require('./routes/manager');
 expressValidator = require('express-validator');
 
 mongoose.Promise = global.Promise;
-// mongoose.connect('mongodb://localhost:27017/HRMS');
+mongoose.set('strictQuery', false);
 var mongoDB = process.env.MONGODB_URI || "mongodb://localhost:27017/HRMS";
 
 mongoose.connect(mongoDB, {
@@ -65,19 +65,23 @@ app.use(flash());
 app.use(passport.initialize());
 app.use(passport.session());
 
+app.use(function(req, res, next) {
+  if (req.user) {
+    req.session.user = req.user;
+  }
+  res.locals.login = req.isAuthenticated();
+  res.locals.session = req.session;
+  res.locals.user = req.user;
+  res.locals.messages = req.flash();
+  next();
+});
+
 app.use('/', index);
 app.use('/users', users);
 app.use('/admin', admin);
 app.use('/manager', manager);
 app.use('/employee', employee);
 
-
-app.use(function(req, res, next) {
-  res.locals.login = req.isAuthenticated();
-  res.locals.session = req.session;
-  res.locals.messages=req.flash();
-  next();
-});
 app.use(function(req, res, next) {
   var err = new Error('Not Found');
   err.status = 404;
@@ -85,6 +89,12 @@ app.use(function(req, res, next) {
 });
 
 app.use(function(err, req, res, next) {
+  if (err.code === 'EBADCSRFTOKEN') {
+    if (req.flash) {
+      req.flash('error', 'Session expired. Please try logging in again.');
+    }
+    return res.redirect('/');
+  }
   res.locals.message = err.message;
   res.locals.error = req.app.get('env') === 'development' ? err : {};
 

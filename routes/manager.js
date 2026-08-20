@@ -30,90 +30,47 @@ router.get('/', function viewHomePage(req, res, next) {
 
 
 
-router.get('/view-employees', function viewEmployees(req, res) {
-
-    var userChunks = [];
-    var chunkSize = 3;
-    if (req.user.type === 'project_manager') {
- 
-        User.find({type: 'employee'}).sort({_id: -1}).exec(function getUser(err, docs) {
-            for (var i = 0; i < docs.length; i++) {
-                userChunks.push(docs[i]);
-            }
+router.get('/view-employees', async function viewEmployees(req, res, next) {
+    try {
+        if (req.user.type === 'project_manager') {
+            const docs = await User.find({type: 'employee'}).sort({_id: -1}).exec();
             res.render('Manager/viewemp_project', {
                 title: 'List Of Employees',
                 csrfToken: req.csrfToken(),
-                users: userChunks, errors: 0, userName: req.session.user.name
+                users: docs,
+                errors: 0,
+                userName: req.session.user ? req.session.user.name : ''
             });
-
-        });
-    }
-    else if (req.user.type === 'accounts_manager') {
-        //find is asynchronous function
-        var salaryChunks = [];
-
-        User.find({$or: [{type: 'employee'}, {type: 'project_manager'}]}).sort({_id: -1}).exec(function getUser(err, docs) {
-            if (err) {
-                console.log(err);
-            }
-            for (var i = 0; i < docs.length; i++) {
-                userChunks.push(docs[i]);
-            }
-
-        });
-
-        setTimeout(getUserSalaries, 900);
-
-        function getUserSalaries() {
-
-
-            function callback(i) {
-                if (i < userChunks.length) {
-                    UserSalary.find({employeeID: userChunks[i]._id}, function (err, salary) {
-                        console.log(i);
-
-                        if (err) {
-                            console.log(err);
-                        }
-                        if (salary.length > 0) {
-                            salaryChunks.push(salary[0]);
-                        }
-                        else {
-                            var newSalary = new UserSalary();
-                            newSalary.accountManagerID = req.session.user._id;
-                            newSalary.employeeID = userChunks[i]._id;
-                            newSalary.save(function (err) {
-                                if (err) {
-                                    console.log(err);
-                                }
-                                salaryChunks.push(newSalary);
-                            })
-                        }
-
-                        callback(i + 1);
-                    });
-                }
-            }
-
-            callback(0);
-
-        }
-
-        setTimeout(render_view, 2000);
-        function render_view() {
-
+        } else if (req.user.type === 'accounts_manager') {
+            const users = await User.find({$or: [{type: 'employee'}, {type: 'project_manager'}]}).sort({_id: -1}).exec();
+            const salaryChunks = await Promise.all(
+                users.map(async (u) => {
+                    let salary = await UserSalary.findOne({employeeID: u._id}).exec();
+                    if (!salary) {
+                        salary = new UserSalary({
+                            accountManagerID: req.session.user ? req.session.user._id : req.user._id,
+                            employeeID: u._id
+                        });
+                        await salary.save();
+                    }
+                    return salary;
+                })
+            );
 
             res.render('Manager/viewemp_accountant', {
-                title: 'List Of Employees', csrfToken: req.csrfToken(),
-                users: userChunks, salary: salaryChunks, userName: req.session.user.name
+                title: 'List Of Employees',
+                csrfToken: req.csrfToken(),
+                users: users,
+                salary: salaryChunks,
+                userName: req.session.user ? req.session.user.name : ''
             });
-
+        } else {
+            res.redirect('/');
         }
-
-
+    } catch (err) {
+        console.error(err);
+        next(err);
     }
-
-
 });
 
 
@@ -376,58 +333,44 @@ router.get('/view-all-personal-projects', function viewAllPersonalProjects(req, 
 
 
 
-router.get('/generate-pay-slip/:employee_id', function generatePaySlip(req, res, next) {
+router.get('/generate-pay-slip/:employee_id', async function generatePaySlip(req, res, next) {
+    try {
+        var employeeId = req.params.employee_id;
+        var user = await User.findById(employeeId).exec();
+        var docs = await PaySlip.find({employeeID: employeeId}).exec();
 
-    var employeeId = req.params.employee_id;
-    User.findById(employeeId, function getUser(err, user) {
-        if (err) {
-            console.log(err);
+        var pay_slip;
+        var hasPaySlip = 0;
+        if (docs.length > 0) {
+            hasPaySlip = 1;
+            pay_slip = docs[0];
+        } else {
+            var newPS = new PaySlip({
+                accountManagerID: req.user._id,
+                employeeID: employeeId,
+                bankName: 'abc',
+                branchAddress: 'abc',
+                basicPay: 0,
+                overtime: 0,
+                conveyanceAllowance: 0
+            });
+            await newPS.save();
+            pay_slip = newPS;
         }
-        PaySlip.find({employeeID: employeeId}, function getPaySlip(err, docs) {
 
-            var pay_slip;
-            var hasPaySlip = 0;
-            if (docs.length > 0) {
-                hasPaySlip = 1;
-                pay_slip = docs[0];
-            }
-            else {
-                var newPS = new PaySlip();
-                newPS.accountManagerID = req.user._id;
-                newPS.employeeID = employeeId;
-                newPS.bankName = 'abc';
-                newPS.branchAddress = 'abc';
-                newPS.basicPay = 0;
-                newPS.overtime = 0;
-                newPS.conveyanceAllowance = 0;
-
-                newPS.save(function savePaySlip(err) {
-                    if (err) {
-                        console.log(err);
-                    }
-                    pay_slip = newPS;
-
-                })
-
-            }
-
-            setTimeout(render_view, 900)
-            function render_view() {
-                res.render('Manager/generatePaySlip', {
-                    title: 'Generate Pay Slip',
-                    csrfToken: req.csrfToken(),
-                    employee: user,
-                    pay_slip: pay_slip,
-                    moment: moment,
-                    hasPaySlip: hasPaySlip
-                    , userName: req.session.user.name
-                });
-            }
+        res.render('Manager/generatePaySlip', {
+            title: 'Generate Pay Slip',
+            csrfToken: req.csrfToken(),
+            employee: user,
+            pay_slip: pay_slip,
+            moment: moment,
+            hasPaySlip: hasPaySlip,
+            userName: req.session.user ? req.session.user.name : ''
         });
-
-    });
-
-
+    } catch (err) {
+        console.error(err);
+        next(err);
+    }
 });
 
 

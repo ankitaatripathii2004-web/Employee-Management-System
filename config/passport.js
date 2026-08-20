@@ -71,6 +71,7 @@ passport.use('local.signin', new LocalStrategy({
     passwordField: 'password',
     passReqToCallback: true
 }, function (req, email, password, done) {
+    var normalizedEmail = (email || '').trim().toLowerCase();
     req.checkBody('email', 'Invalid email').notEmpty().isEmail();
     req.checkBody('password', 'Invalid password').notEmpty();
     var errors = req.validationErrors();
@@ -81,15 +82,15 @@ passport.use('local.signin', new LocalStrategy({
         });
         return done(null, false, req.flash('error', messages));
     }
-    User.findOne({'email': email}, function (err, user) {
+    User.findOne({'email': normalizedEmail}, function (err, user) {
         if (err) {
             return done(err);
         }
         if (!user) {
-            return done(null, false, {message: 'Incorrect email or password'});
+            return done(null, false, req.flash('error', 'Incorrect email or password'));
         }
         if (!user.validPassword(password)) {
-            return done(null, false, {message: 'Incorrect email or password'});
+            return done(null, false, req.flash('error', 'Incorrect email or password'));
         }
         return done(null, user);
     });

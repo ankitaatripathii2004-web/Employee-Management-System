@@ -74,10 +74,10 @@ router.get('/add-employee', function addEmployee(req, res, next) {
     res.render('Admin/addEmployee', {
         title: 'Add Employee',
         csrfToken: req.csrfToken(),
-        user: config_passport.User,
+        user: config_passport.User || {},
         messages: messages,
         hasErrors: messages.length > 0,
-        userName: req.session.user.name
+        userName: req.session.user ? req.session.user.name : ''
     });
 
 });
@@ -114,43 +114,27 @@ router.get('/all-employee-projects/:id', function getAllEmployeePojects(req, res
 });
 
 
-router.get('/leave-applications', function getLeaveApplications(req, res, next) {
+router.get('/leave-applications', async function getLeaveApplications(req, res, next) {
+    try {
+        const docs = await Leave.find({}).sort({_id: -1}).exec();
+        const hasLeave = docs.length > 0 ? 1 : 0;
+        const employeeChunks = await Promise.all(
+            docs.map(leave => User.findById(leave.applicantID).exec().catch(() => null))
+        );
 
-    var leaveChunks = [];
-    var employeeChunks = [];
-    var temp;
-  
-    Leave.find({}).sort({_id: -1}).exec(function findAllLeaves(err, docs) {
-        var hasLeave = 0;
-        if (docs.length > 0) {
-            hasLeave = 1;
-        }
-        for (var i = 0; i < docs.length; i++) {
-            leaveChunks.push(docs[i])
-        }
-        for (var i = 0; i < leaveChunks.length; i++) {
-
-            User.findById(leaveChunks[i].applicantID, function getUser(err, user) {
-                if (err) {
-                    console.log(err);
-                }
-                employeeChunks.push(user);
-
-            })
-        }
-
-        setTimeout(render_view, 900);
-        function render_view() {
-            res.render('Admin/allApplications', {
-                title: 'List Of Leave Applications',
-                csrfToken: req.csrfToken(),
-                hasLeave: hasLeave,
-                leaves: leaveChunks,
-                employees: employeeChunks, moment: moment, userName: req.session.user.name
-            });
-        }
-    });
-
+        res.render('Admin/allApplications', {
+            title: 'List Of Leave Applications',
+            csrfToken: req.csrfToken(),
+            hasLeave: hasLeave,
+            leaves: docs,
+            employees: employeeChunks,
+            moment: moment,
+            userName: req.session.user ? req.session.user.name : ''
+        });
+    } catch (err) {
+        console.error(err);
+        next(err);
+    }
 });
 
 router.get('/respond-application/:leave_id/:employee_id', function respondApplication(req, res, next) {
@@ -537,53 +521,46 @@ router.post('/edit-employee-project/:id', function editEmployeeProject(req, res)
 
 
 
-router.post('/delete-employee/:id', function deleteEmployee(req, res) {
-    var id = req.params.id;
-    User.findByIdAndRemove({_id: id}, function deleteUser(err) {
-        if (err) {
-            console.log('unable to delete employee');
-        }
-        else {
-            res.redirect('/admin/view-all-employees');
-        }
-    });
+router.post('/delete-employee/:id', async function deleteEmployee(req, res, next) {
+    try {
+        var id = req.params.id;
+        await User.findByIdAndDelete(id).exec();
+        res.redirect('/admin/view-all-employees');
+    } catch (err) {
+        console.error('unable to delete employee', err);
+        res.redirect('/admin/view-all-employees');
+    }
 });
 
 
 
 
 
-router.post('/mark-attendance', function markAttendance(req, res, next) {
+router.post('/mark-attendance', async function markAttendance(req, res, next) {
+    try {
+        var today = new Date();
+        var existing = await Attendance.findOne({
+            employeeID: req.session.user._id,
+            date: today.getDate(),
+            month: today.getMonth() + 1,
+            year: today.getFullYear()
+        }).exec();
 
-    Attendance.find({
-        employeeID: req.session.user._id,
-        date: new Date().getDate(),
-        month: new Date().getMonth() + 1,
-        year: new Date().getFullYear()
-    }, function getAttendance(err, docs) {
-        var found = 0;
-        if (docs.length > 0) {
-            found = 1;
-        }
-        else {
-
-            var newAttendance = new Attendance();
-            newAttendance.employeeID = req.session.user._id;
-            newAttendance.year = new Date().getFullYear();
-            newAttendance.month = new Date().getMonth() + 1;
-            newAttendance.date = new Date().getDate();
-            newAttendance.present = 1;
-            newAttendance.save(function saveAttendance(err) {
-                if (err) {
-                    console.log(err);
-                }
-
+        if (!existing) {
+            var newAttendance = new Attendance({
+                employeeID: req.session.user._id,
+                year: today.getFullYear(),
+                month: today.getMonth() + 1,
+                date: today.getDate(),
+                present: true
             });
+            await newAttendance.save();
         }
         res.redirect('/admin/view-attendance-current');
-
-    });
-
+    } catch (err) {
+        console.error(err);
+        res.redirect('/admin/view-attendance-current');
+    }
 });
 module.exports = router;
 

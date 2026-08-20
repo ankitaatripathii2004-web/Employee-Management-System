@@ -40,9 +40,18 @@ router.get('/', function viewLoginPage(req, res, next) {
 
 
 router.get('/logout', isLoggedIn, function logoutUser(req, res, next) {
-
-    req.logout();
-    res.redirect('/');
+    req.logout(function (err) {
+        if (err) {
+            return next(err);
+        }
+        if (req.session) {
+            req.session.destroy(function (err) {
+                res.redirect('/');
+            });
+        } else {
+            res.redirect('/');
+        }
+    });
 });
 
 

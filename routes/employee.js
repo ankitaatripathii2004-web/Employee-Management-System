@@ -210,38 +210,31 @@ router.post('/apply-for-leave', function applyForLeave(req, res, next) {
 
 
 
-router.post('/mark-employee-attendance', function markEmployeeAttendance(req, res, next) {
+router.post('/mark-employee-attendance', async function markEmployeeAttendance(req, res, next) {
+    try {
+        var today = new Date();
+        var existing = await Attendance.findOne({
+            employeeID: req.user._id,
+            month: today.getMonth() + 1,
+            date: today.getDate(),
+            year: today.getFullYear()
+        }).exec();
 
-    Attendance.find({
-        employeeID: req.user._id,
-        month: new Date().getMonth()+ 1,
-        date: new Date().getDate(),
-        year: new Date().getFullYear()
-    }, function getAttendanceSheet(err, docs) {
-        var found = 0;
-        if (docs.length > 0) {
-            found = 1;
-        }
-        else {
-
-            var newAttendance = new Attendance();
-            newAttendance.employeeID = req.user._id;
-            newAttendance.year = new Date().getFullYear();
-            newAttendance.month = new Date().getMonth() + 1;
-            newAttendance.date = new Date().getDate();
-            newAttendance.present = 1;
-            newAttendance.save(function saveAttendance(err) {
-                if (err) {
-                    console.log(err);
-                }
-
+        if (!existing) {
+            var newAttendance = new Attendance({
+                employeeID: req.user._id,
+                year: today.getFullYear(),
+                month: today.getMonth() + 1,
+                date: today.getDate(),
+                present: true
             });
+            await newAttendance.save();
         }
         res.redirect('/employee/view-attendance-current');
-
-    });
-
-
+    } catch (err) {
+        console.error(err);
+        res.redirect('/employee/view-attendance-current');
+    }
 });
 module.exports = router;
 
