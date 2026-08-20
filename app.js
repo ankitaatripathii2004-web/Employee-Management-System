@@ -23,10 +23,16 @@ expressValidator = require('express-validator');
 
 mongoose.Promise = global.Promise;
 mongoose.set('strictQuery', false);
-var mongoDB = process.env.MONGODB_URI || "mongodb://localhost:27017/HRMS";
+var mongoDB = process.env.MONGODB_URI 
+    ? process.env.MONGODB_URI.trim().replace(/^["']|["']$/g, '') 
+    : "mongodb://localhost:27017/HRMS";
 
 if (!process.env.MONGODB_URI) {
-    console.warn("⚠️ Warning: MONGODB_URI environment variable is not set! Falling back to localhost.");
+    if (process.env.NODE_ENV === 'production') {
+        console.error("❌ CRITICAL ERROR: MONGODB_URI is not defined in Vercel Environment Variables! Please add MONGODB_URI in Vercel Settings -> Environment Variables and Redeploy.");
+    } else {
+        console.warn("⚠️ Warning: MONGODB_URI environment variable is not set! Defaulting to local MongoDB.");
+    }
 }
 
 if (mongoose.connection.readyState === 0) {
